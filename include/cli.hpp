@@ -3,8 +3,6 @@
 #include <string>
 #include <CLI/CLI.hpp>
 
-namespace jsonutils {
-
 struct QueryArgs {
     std::string query;
 };
@@ -24,6 +22,4 @@ inline QueryArgs parseQueryArgs(int argc, char* argv[], const std::string& descr
     }
     
     return args;
-}
-
-} // namespace jsonutils 
+} 

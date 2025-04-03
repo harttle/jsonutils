@@ -67,6 +67,7 @@ echo '{"old_key": "value"}' | jsonutils transform '{"new_key": "$.old_key"}'
 - CMake 3.15 or higher
 - C++17 compliant compiler
 - Git (for fetching dependencies)
+- jq development files (libjq-dev on Ubuntu/Debian, jq on macOS via Homebrew)
 
 ### Build Steps
 

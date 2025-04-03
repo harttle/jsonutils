@@ -27,7 +27,7 @@ FetchContent_Declare(cli11
 )
 FetchContent_MakeAvailable(cli11)
 
-# Add jq
+# Find jq using pkg-config
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JQ REQUIRED IMPORTED_TARGET libjq)
 
@@ -43,17 +43,20 @@ FetchContent_MakeAvailable(googletest)
 # Common library
 add_library(jsonutils_lib
     src/jq_utils.cpp
-    src/io_utils.cpp
 )
 target_include_directories(jsonutils_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+        ${JQ_INCLUDE_DIRS}
 )
-target_link_libraries(jsonutils_lib PRIVATE 
-    nlohmann_json::nlohmann_json
-    jq
-    CLI11::CLI11
+target_link_libraries(jsonutils_lib 
+    PUBLIC 
+        nlohmann_json::nlohmann_json
+        CLI11::CLI11
+    PRIVATE
+        PkgConfig::JQ
+        CLI11::CLI11
 )
 
 # Commands

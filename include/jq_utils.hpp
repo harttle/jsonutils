@@ -4,19 +4,18 @@
 #include <nlohmann/json.hpp>
 #include <jq.h>
 
-namespace jsonutils {
-
 class JqUtils {
 public:
+    // Initialize and cleanup
+    static void initialize();
+    static void cleanup();
+    
     // jq evaluation
-    static bool evaluateJq(const std::string& json, const std::string& query, std::string& result);
-    static bool evaluateJq(const std::string& json, const std::string& query, nlohmann::json& result);
+    static nlohmann::json evaluateJq(const std::string& input, const std::string& filter);
     
     // Value checking
-    static bool isTruthy(const nlohmann::json& j);
+    static bool isTruthy(const nlohmann::json& value);
 
-    static nlohmann::json parseLine(const std::string& line);
-    static nlohmann::json evaluateJq(const std::string& input, const std::string& filter);
-};
-
-} // namespace jsonutils 
+private:
+    static jq_state* jq;
+}; 

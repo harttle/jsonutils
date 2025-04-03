@@ -1,90 +1,103 @@
 #include <gtest/gtest.h>
-#include "jsonutils.hpp"
+#include <cstdio>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <array>
 #include <sstream>
-#include <thread>
-#include <chrono>
+
+// Helper function to execute command and get output
+std::string exec(const std::string& cmd, const std::string& input = "") {
+    std::array<char, 128> buffer;
+    std::string result;
+
+    // Create pipes for input and output
+    FILE* pipe = popen((cmd + " 2>&1").c_str(), "w");
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+
+    // Write input to pipe if provided
+    if (!input.empty()) {
+        fprintf(pipe, "%s", input.c_str());
+    }
+
+    // Close pipe and get output
+    pclose(pipe);
+
+    pipe = popen((cmd + " 2>&1").c_str(), "r");
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+        result += buffer.data();
+    }
+
+    pclose(pipe);
+    return result;
+}
 
 TEST(JwhereTest, BasicFilter) {
-    std::string input = R"({"name": "John", "age": 35})";
-    std::string query = ".age > 30";
-    std::string result;
+    std::string input = R"({"name": "John", "age": 30}
+{"name": "Jane", "age": 25})";
+    std::string expected = R"({"name": "John", "age": 30})";
     
-    EXPECT_TRUE(jsonutils::JsonUtils::evaluateJq(input, query, result));
-    EXPECT_EQ(result, "true");
+    std::string output = exec("./jwhere '.age > 25'", input);
+    EXPECT_EQ(output, expected + "\n");
 }
 
 TEST(JwhereTest, StringComparison) {
-    std::string input = R"({"name": "John", "type": "user"})";
-    std::string query = ".type == \"user\"";
-    std::string result;
+    std::string input = R"({"name": "John", "type": "admin"}
+{"name": "Jane", "type": "user"})";
+    std::string expected = R"({"name": "Jane", "type": "user"})";
     
-    EXPECT_TRUE(jsonutils::JsonUtils::evaluateJq(input, query, result));
-    EXPECT_EQ(result, "true");
+    std::string output = exec("./jwhere '.type == \"user\"'", input);
+    EXPECT_EQ(output, expected + "\n");
 }
 
 TEST(JwhereTest, ComplexCondition) {
-    std::string input = R"({"user": {"age": 35, "type": "premium"}})";
-    std::string query = ".user.age > 30 and .user.type == \"premium\"";
-    std::string result;
+    std::string input = R"({"name": "John", "age": 30, "type": "premium"}
+{"name": "Jane", "age": 25, "type": "basic"}
+{"name": "Bob", "age": 35, "type": "premium"})";
+    std::string expected = R"({"name": "John", "age": 30, "type": "premium"}
+{"name": "Bob", "age": 35, "type": "premium"})";
     
-    EXPECT_TRUE(jsonutils::JsonUtils::evaluateJq(input, query, result));
-    EXPECT_EQ(result, "true");
+    std::string output = exec("./jwhere '.age > 25 and .type == \"premium\"'", input);
+    EXPECT_EQ(output, expected + "\n");
 }
 
 TEST(JwhereTest, InvalidJson) {
-    std::string input = "invalid json";
-    std::string query = ".age > 30";
-    std::string result;
+    std::string input = R"({"name": "John", "age": 30}
+invalid json
+{"name": "Jane", "age": 25})";
+    std::string expected = R"({"name": "John", "age": 30}
+{"name": "Jane", "age": 25})";
     
-    EXPECT_FALSE(jsonutils::JsonUtils::evaluateJq(input, query, result));
+    std::string output = exec("./jwhere 'true'", input);
+    EXPECT_EQ(output, expected + "\n");
 }
 
 TEST(JwhereTest, InvalidQuery) {
-    std::string input = R"({"age": 30})";
-    std::string query = "invalid query";
-    std::string result;
-    
-    EXPECT_FALSE(jsonutils::JsonUtils::evaluateJq(input, query, result));
+    std::string input = R"({"name": "John", "age": 30})";
+    std::string output = exec("./jwhere 'invalid query'", input);
+    EXPECT_TRUE(output.find("Error") != std::string::npos);
 }
 
-// Test backpressure handling with small buffer
-TEST(JwhereTest, BackpressureHandling) {
-    std::stringstream input, output;
+TEST(JwhereTest, NoMatches) {
+    std::string input = R"({"name": "John", "age": 30}
+{"name": "Jane", "age": 25})";
     
-    // Setup with very small buffer to simulate backpressure
-    jsonutils::JsonUtils::setupIO(input, output, 16);
-    
-    // Generate large input
-    std::string large_json = R"({"data": ")" + std::string(1000, 'x') + R"("})";
-    input << large_json << std::endl;
-    
-    // Write to output stream
-    jsonutils::JsonUtils::writeLine(output, large_json);
-    
-    // Verify output was written correctly despite backpressure
-    std::string result;
-    std::getline(output, result);
-    EXPECT_EQ(result, large_json);
+    std::string output = exec("./jwhere '.age > 40'", input);
+    EXPECT_EQ(output, "");
 }
 
-// Test backpressure with multiple lines
-TEST(JwhereTest, MultipleLinesBackpressure) {
-    std::stringstream input, output;
+TEST(JwhereTest, AllMatches) {
+    std::string input = R"({"name": "John", "age": 30}
+{"name": "Jane", "age": 25})";
+    std::string expected = R"({"name": "John", "age": 30}
+{"name": "Jane", "age": 25})";
     
-    // Setup with very small buffer
-    jsonutils::JsonUtils::setupIO(input, output, 16);
-    
-    // Generate multiple lines
-    for (int i = 0; i < 10; ++i) {
-        std::string json = R"({"id": )" + std::to_string(i) + R"(, "data": ")" + std::string(100, 'x') + R"("})";
-        input << json << std::endl;
-        jsonutils::JsonUtils::writeLine(output, json);
-    }
-    
-    // Verify all lines were written correctly
-    for (int i = 0; i < 10; ++i) {
-        std::string result;
-        std::getline(output, result);
-        EXPECT_TRUE(result.find("\"id\": " + std::to_string(i)) != std::string::npos);
-    }
+    std::string output = exec("./jwhere '.age > 0'", input);
+    EXPECT_EQ(output, expected + "\n");
 } 
