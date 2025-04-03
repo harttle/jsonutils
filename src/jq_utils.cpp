@@ -1,11 +1,23 @@
 #include "jq_utils.hpp"
-#include "json_parser.hpp"
 #include <jq.h>
+#include <jv.h>
+#include <nlohmann/json.hpp>
 
-namespace jsonutils {
+jq_state* JqUtils::jq = nullptr;
 
-nlohmann::json JqUtils::parseLine(const std::string& line) {
-    return nlohmann::json::parse(line);
+void JqUtils::initialize() {
+    if (!jq) {
+        jq = jq_init();
+        if (!jq) {
+            throw std::runtime_error("Failed to initialize jq");
+        }
+    }
+}
+
+void JqUtils::cleanup() {
+    if (jq) {
+        jq_teardown(&jq);
+    }
 }
 
 bool JqUtils::isTruthy(const nlohmann::json& value) {
@@ -19,29 +31,45 @@ bool JqUtils::isTruthy(const nlohmann::json& value) {
 }
 
 nlohmann::json JqUtils::evaluateJq(const std::string& input, const std::string& filter) {
-    jq_state *jq = jq_init();
     if (!jq) {
-        throw std::runtime_error("Failed to initialize jq");
+        initialize();
     }
 
-    int compiled = jq_compile(jq, filter.c_str());
-    if (!compiled) {
-        jq_teardown(&jq);
+    // Compile the filter
+    if (!jq_compile(jq, filter.c_str())) {
         throw std::runtime_error("Failed to compile jq filter");
     }
 
-    jv parsed = jv_parse(input.c_str());
-    if (jv_is_invalid(parsed)) {
-        jq_teardown(&jq);
+    // Parse input JSON
+    jv input_jv = jv_parse_sized(input.c_str(), input.length());
+    if (jv_get_kind(input_jv) == JV_KIND_INVALID) {
+        jv_free(input_jv);
         throw std::runtime_error("Failed to parse input JSON");
     }
 
-    jv result = jq_next(jq, parsed);
-    std::string output = jv_dump_string(result);
-    jv_free(result);
-    jq_teardown(&jq);
+    // Process the input
+    jq_start(jq, input_jv, 0);  // input_jv is consumed by jq_start
 
-    return parseLine(output);
+    // Get the result
+    jv value = jq_next(jq);
+    if (jv_get_kind(value) == JV_KIND_INVALID) {
+        jv_free(value);
+        throw std::runtime_error("Failed to evaluate jq filter");
+    }
+
+    // Convert to string with proper flags
+    jv dumped = jv_dump_string(jv_copy(value), JV_PRINT_PRETTY);
+    if (jv_get_kind(dumped) == JV_KIND_INVALID) {
+        jv_free(dumped);
+        jv_free(value);
+        throw std::runtime_error("Failed to convert jq result to string");
+    }
+
+    // Get the string value and parse it as JSON
+    const char* str = jv_string_value(dumped);
+    std::string result_str = str ? str : "";
+    jv_free(dumped);
+    jv_free(value);
+
+    return nlohmann::json::parse(result_str);
 }
-
-} // namespace jsonutils 

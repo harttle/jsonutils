@@ -1,24 +1,26 @@
-#include "jsonutils.hpp"
-#include "command_args.hpp"
+#include "cli.hpp"
+#include "jq_utils.hpp"
+#include <nlohmann/json.hpp>
 #include <iostream>
 #include <string>
 #include <vector>
 
 int main(int argc, char* argv[]) {
     try {
-        auto args = jsonutils::parseQueryArgs(argc, argv, "Transform each JSON line using jq query");
+        JqUtils::initialize();
+        auto args = parseQueryArgs(argc, argv, "Transform each JSON line using jq query");
         std::string line;
         while (std::getline(std::cin, line)) {
             try {
-                nlohmann::json result;
-                if (jsonutils::JsonUtils::evaluateJq(line, args.query, result)) {
-                    std::cout << jsonutils::JsonUtils::stringify(result) << std::endl;
-                }
+                auto result = JqUtils::evaluateJq(line, args.query);
+                std::cout << result.dump() << std::endl;
             } catch (...) {
                 continue;
             }
         }
+        JqUtils::cleanup();
     } catch (const std::exception& e) {
+        JqUtils::cleanup();
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
